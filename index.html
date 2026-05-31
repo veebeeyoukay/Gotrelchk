@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Relationship Check-Up</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">❤</span>
+      <span>Relationship Check-Up</span>
+    </div>
+    <div id="session" class="session" hidden>
+      <span id="whoami" class="whoami"></span>
+      <button id="btn-glossary" class="ghost" type="button">Glossary</button>
+      <button id="btn-save" class="ghost" type="button">Save</button>
+      <button id="btn-signout" class="ghost" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <main id="app" class="app"><!-- views injected here --></main>
+
+  <!-- Glossary drawer -->
+  <aside id="glossary-drawer" class="drawer" hidden>
+    <div class="drawer-head">
+      <h2>Glossary</h2>
+      <button id="btn-glossary-close" class="ghost" type="button">✕</button>
+    </div>
+    <div id="glossary-body" class="drawer-body"></div>
+  </aside>
+  <div id="scrim" class="scrim" hidden></div>
+
+  <!-- Floating tooltip element (positioned by JS) -->
+  <div id="tooltip" class="tooltip" hidden></div>
+
+  <footer class="footnote">
+    Reflective self-assessment inspired by the Gottman Method &amp; Sound Relationship House.
+    Not a diagnostic instrument or a substitute for professional care. Data stays on your device.
+  </footer>
+
+  <script src="assets/data.js"></script>
+  <script src="assets/app.js"></script>
+</body>
+</html>
