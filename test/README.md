@@ -5,8 +5,9 @@ dependency-free HTML file. Made for the backseat crew.
 
 ## Play it
 
-Just open `reflex-rumble.html` in any mobile browser (or double-click it on a
-desktop). No build step, no server, no internet needed.
+Just open `index.html` in any mobile browser (or double-click it on a
+desktop). No build step, no server, no internet needed. It's also deployed
+live via Netlify (`netlify.toml` publishes this folder).
 
 ## How it works
 
