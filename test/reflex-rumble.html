@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Reflex Rumble</title>
+<style>
+  :root {
+    --red: #ff3b5c;
+    --blue: #2f7bff;
+    --green: #19c37d;
+    --yellow: #ffc400;
+    --dark: #14151a;
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    background: var(--dark);
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+
+  #app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ---------- Scoreboard ---------- */
+  #scoreboard {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: stretch;
+    background: #0c0d11;
+    box-shadow: 0 2px 12px rgba(0,0,0,.6);
+    z-index: 30;
+    padding: env(safe-area-inset-top) 0 0 0;
+  }
+  .score-cell {
+    flex: 1;
+    text-align: center;
+    padding: 6px 2px 8px;
+    border-bottom: 5px solid transparent;
+    position: relative;
+  }
+  .score-cell .sc-name {
+    font-size: clamp(11px, 3.2vw, 16px);
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: .9;
+  }
+  .score-cell .sc-pts {
+    font-size: clamp(20px, 7vw, 34px);
+    font-weight: 900;
+    line-height: 1.05;
+  }
+  .score-cell.bump .sc-pts { animation: pop .45s ease; }
+  @keyframes pop {
+    0% { transform: scale(1); }
+    40% { transform: scale(1.6); }
+    100% { transform: scale(1); }
+  }
+
+  /* ---------- Generic screens ---------- */
+  .screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 16px;
+    gap: 18px;
+  }
+
+  h1.title {
+    font-size: clamp(40px, 13vw, 90px);
+    margin: 0;
+    font-weight: 900;
+    letter-spacing: 1px;
+    line-height: .95;
+    background: linear-gradient(90deg, var(--red), var(--yellow), var(--green), var(--blue));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 3px 0 rgba(0,0,0,.35));
+  }
+  .subtitle { font-size: clamp(15px, 4.5vw, 22px); opacity: .85; margin: 0; max-width: 22em; }
+
+  .btn {
+    border: none;
+    border-radius: 18px;
+    padding: 20px 34px;
+    font-size: clamp(20px, 6vw, 30px);
+    font-weight: 900;
+    color: #14151a;
+    background: var(--yellow);
+    box-shadow: 0 6px 0 #b88a00, 0 10px 18px rgba(0,0,0,.4);
+    cursor: pointer;
+    transition: transform .06s ease, box-shadow .06s ease;
+  }
+  .btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #b88a00, 0 5px 10px rgba(0,0,0,.4); }
+  .btn.green { background: var(--green); box-shadow: 0 6px 0 #0e7d50, 0 10px 18px rgba(0,0,0,.4); color: #fff; }
+  .btn.green:active { box-shadow: 0 2px 0 #0e7d50, 0 5px 10px rgba(0,0,0,.4); }
+
+  /* ---------- Setup ---------- */
+  #setup .players {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 420px;
+  }
+  .setup-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: rgba(255,255,255,.06);
+    border-radius: 16px;
+    padding: 10px 14px;
+  }
+  .swatch {
+    flex: 0 0 auto;
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,.5);
+  }
+  .setup-row input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid rgba(255,255,255,.25);
+    color: #fff;
+    font-size: 20px;
+    font-weight: bold;
+    padding: 8px 4px;
+    font-family: inherit;
+  }
+  .setup-row input:focus { outline: none; border-bottom-color: #fff; }
+  .setup-row input::placeholder { color: rgba(255,255,255,.45); }
+
+  /* ---------- Arena (4 quadrants) ---------- */
+  #arena {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 6px;
+    padding: 6px;
+    position: relative;
+  }
+  .quad {
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    position: relative;
+    overflow: hidden;
+    font-weight: 900;
+    transition: filter .12s ease, transform .08s ease;
+  }
+  /* players 1 & 2 (top row) are rotated 180° so they face the back-seat layout */
+  .quad[data-rot="1"] { transform: rotate(180deg); }
+  .quad .q-name {
+    font-size: clamp(16px, 5vw, 30px);
+    text-shadow: 0 2px 4px rgba(0,0,0,.4);
+    padding: 0 8px;
+    text-align: center;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .quad .q-emoji {
+    font-size: clamp(40px, 16vw, 90px);
+    line-height: 1;
+    min-height: 1.1em;
+  }
+  .quad.red    { background: var(--red); }
+  .quad.blue   { background: var(--blue); }
+  .quad.green  { background: var(--green); }
+  .quad.yellow { background: var(--yellow); color: #5a4500; }
+
+  .quad.locked { filter: grayscale(.85) brightness(.55); }
+  .quad.winner { animation: flashWin .5s ease 3; }
+  @keyframes flashWin {
+    0%,100% { filter: brightness(1); }
+    50% { filter: brightness(1.8); }
+  }
+
+  /* ---------- Center status ---------- */
+  #status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 20;
+  }
+  #status .badge {
+    background: rgba(0,0,0,.72);
+    border-radius: 26px;
+    padding: 18px 30px;
+    font-size: clamp(26px, 9vw, 56px);
+    font-weight: 900;
+    text-align: center;
+    box-shadow: 0 8px 30px rgba(0,0,0,.6);
+    max-width: 90%;
+  }
+  #status .badge.go { background: rgba(25,195,125,.95); animation: goPulse .25s ease; }
+  @keyframes goPulse { from { transform: scale(.6); } to { transform: scale(1); } }
+  #status.hidden { display: none; }
+
+  .shake { animation: shake .4s ease; }
+  @keyframes shake {
+    0%,100% { transform: translate(0,0); }
+    20% { transform: translate(-8px, 4px); }
+    40% { transform: translate(8px, -4px); }
+    60% { transform: translate(-6px, 6px); }
+    80% { transform: translate(6px, -2px); }
+  }
+
+  /* ---------- Win screen ---------- */
+  #win { position: relative; }
+  #win .crown { font-size: clamp(60px, 22vw, 130px); line-height: 1; }
+  #win .winner-name {
+    font-size: clamp(34px, 11vw, 70px);
+    font-weight: 900;
+    margin: 0;
+  }
+  #confetti { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .confetti-bit {
+    position: absolute;
+    top: -20px;
+    width: 12px; height: 16px;
+    opacity: .95;
+    will-change: transform;
+    animation: fall linear forwards;
+  }
+  @keyframes fall {
+    to { transform: translateY(110vh) rotate(720deg); }
+  }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- Scoreboard (hidden until a game starts) -->
+  <div id="scoreboard" class="hidden"></div>
+
+  <!-- START SCREEN -->
+  <div id="start" class="screen">
+    <h1 class="title">Reflex<br>Rumble</h1>
+    <p class="subtitle">4 players. One phone. Tap fastest when the screen turns green — but tap too early and you're locked out! First to 5 wins.</p>
+    <button class="btn" id="goSetup">Play</button>
+  </div>
+
+  <!-- SETUP SCREEN -->
+  <div id="setup" class="screen hidden">
+    <h1 class="title" style="font-size:clamp(30px,9vw,56px)">Who's playing?</h1>
+    <div class="players" id="setupRows"></div>
+    <button class="btn green" id="startGame">Start Rumble!</button>
+  </div>
+
+  <!-- GAME SCREEN -->
+  <div id="game" class="screen hidden" style="padding:0; gap:0;">
+    <div id="arena"></div>
+    <div id="status" class="hidden"><div class="badge">Wait for it…</div></div>
+  </div>
+
+  <!-- WIN SCREEN -->
+  <div id="win" class="screen hidden">
+    <div id="confetti"></div>
+    <div class="crown">👑</div>
+    <p class="winner-name" id="winnerName">Player 1</p>
+    <p class="subtitle" id="winnerSub">wins the Rumble!</p>
+    <button class="btn green" id="playAgain">Play Again</button>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var WIN_SCORE = 5;
+  var COLORS = ["red", "blue", "green", "yellow"];
+  var COLOR_HEX = { red: "#ff3b5c", blue: "#2f7bff", green: "#19c37d", yellow: "#ffc400" };
+
+  var players = [];      // { name, color, score, el, scoreEl }
+  var roundState = "idle"; // idle | waiting | go | done
+  var waitTimer = null;
+  var goAt = 0;
+  var lockedThisRound = {}; // index -> true
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------- Setup screen ----------
+  function buildSetupRows() {
+    var wrap = $("setupRows");
+    wrap.innerHTML = "";
+    for (var i = 0; i < 4; i++) {
+      var row = document.createElement("div");
+      row.className = "setup-row";
+
+      var sw = document.createElement("div");
+      sw.className = "swatch";
+      sw.style.background = COLOR_HEX[COLORS[i]];
+
+      var input = document.createElement("input");
+      input.type = "text";
+      input.maxLength = 12;
+      input.placeholder = "Player " + (i + 1);
+      input.setAttribute("data-idx", i);
+      input.autocomplete = "off";
+      input.autocapitalize = "words";
+
+      row.appendChild(sw);
+      row.appendChild(input);
+      wrap.appendChild(row);
+    }
+  }
+
+  // ---------- Start a game ----------
+  function startGame() {
+    var inputs = document.querySelectorAll("#setupRows input");
+    players = [];
+    for (var i = 0; i < 4; i++) {
+      var name = (inputs[i].value || "").trim();
+      if (!name) name = "Player " + (i + 1);
+      players.push({ name: name, color: COLORS[i], score: 0, el: null, scoreEl: null });
+    }
+    buildScoreboard();
+    buildArena();
+    show("game");
+    $("scoreboard").classList.remove("hidden");
+    startRound();
+  }
+
+  function buildScoreboard() {
+    var sb = $("scoreboard");
+    sb.innerHTML = "";
+    players.forEach(function (p) {
+      var cell = document.createElement("div");
+      cell.className = "score-cell";
+      cell.style.borderBottomColor = COLOR_HEX[p.color];
+
+      var nm = document.createElement("div");
+      nm.className = "sc-name";
+      nm.textContent = p.name;
+      nm.style.color = COLOR_HEX[p.color];
+
+      var pts = document.createElement("div");
+      pts.className = "sc-pts";
+      pts.textContent = "0";
+
+      cell.appendChild(nm);
+      cell.appendChild(pts);
+      sb.appendChild(cell);
+      p.scoreEl = pts;
+      p.scoreCell = cell;
+    });
+  }
+
+  function buildArena() {
+    var arena = $("arena");
+    // remove existing quads but keep #status
+    Array.prototype.slice.call(arena.querySelectorAll(".quad")).forEach(function (q) { q.remove(); });
+
+    players.forEach(function (p, i) {
+      var q = document.createElement("div");
+      q.className = "quad " + p.color;
+      // top row (players 0,1) rotated so they read upside-up from across the phone
+      q.setAttribute("data-rot", i < 2 ? "1" : "0");
+      q.setAttribute("data-idx", i);
+
+      var name = document.createElement("div");
+      name.className = "q-name";
+      name.textContent = p.name;
+
+      var emoji = document.createElement("div");
+      emoji.className = "q-emoji";
+      emoji.textContent = "";
+
+      q.appendChild(name);
+      q.appendChild(emoji);
+      arena.appendChild(q);
+
+      p.el = q;
+      p.emojiEl = emoji;
+
+      q.addEventListener("pointerdown", function (ev) {
+        ev.preventDefault();
+        onTap(i);
+      });
+    });
+
+    // make sure #status sits last (on top)
+    arena.appendChild($("status"));
+  }
+
+  // ---------- Round flow ----------
+  function startRound() {
+    roundState = "waiting";
+    lockedThisRound = {};
+    goAt = 0;
+
+    players.forEach(function (p) {
+      p.el.classList.remove("locked", "winner");
+      p.emojiEl.textContent = "";
+    });
+
+    setStatus("Wait for it…", false);
+
+    var delay = 2000 + Math.random() * 4000; // 2–6s
+    clearTimeout(waitTimer);
+    waitTimer = setTimeout(goNow, delay);
+  }
+
+  function goNow() {
+    if (roundState !== "waiting") return;
+    roundState = "go";
+    goAt = Date.now();
+    setStatus("TAP NOW!", true);
+  }
+
+  function onTap(idx) {
+    if (roundState === "waiting") {
+      // early tap = lockout
+      if (lockedThisRound[idx]) return;
+      lockedThisRound[idx] = true;
+      var p = players[idx];
+      p.el.classList.add("locked");
+      p.emojiEl.textContent = "😬";
+      p.el.classList.remove("shake"); void p.el.offsetWidth; p.el.classList.add("shake");
+
+      // if everyone is locked out, just move to next round
+      if (Object.keys(lockedThisRound).length >= players.length) {
+        clearTimeout(waitTimer);
+        setStatus("Everyone jumped! 😬", false);
+        setTimeout(startRound, 1400);
+      }
+      return;
+    }
+
+    if (roundState === "go") {
+      if (lockedThisRound[idx]) return; // locked-out players can't win
+      roundState = "done";
+      winRound(idx);
+    }
+  }
+
+  function winRound(idx) {
+    var p = players[idx];
+    p.score++;
+    p.scoreEl.textContent = String(p.score);
+    p.el.classList.add("winner");
+    p.emojiEl.textContent = "⚡";
+
+    // dim the others
+    players.forEach(function (other, i) {
+      if (i !== idx) other.el.classList.add("locked");
+    });
+
+    // score bump animation
+    p.scoreCell.classList.remove("bump"); void p.scoreCell.offsetWidth; p.scoreCell.classList.add("bump");
+
+    setStatus(p.name + " wins! ⚡", false);
+
+    if (p.score >= WIN_SCORE) {
+      setTimeout(function () { endGame(p); }, 1300);
+    } else {
+      setTimeout(startRound, 1500);
+    }
+  }
+
+  function endGame(winner) {
+    roundState = "idle";
+    $("scoreboard").classList.add("hidden");
+    $("winnerName").textContent = winner.name;
+    $("winnerName").style.color = COLOR_HEX[winner.color];
+    $("winnerSub").textContent = "wins the Rumble!";
+    show("win");
+    launchConfetti();
+  }
+
+  // ---------- Status badge ----------
+  function setStatus(text, isGo) {
+    var status = $("status");
+    var badge = status.querySelector(".badge");
+    status.classList.remove("hidden");
+    badge.textContent = text;
+    badge.className = "badge" + (isGo ? " go" : "");
+  }
+
+  // ---------- Confetti ----------
+  var confettiColors = ["#ff3b5c", "#2f7bff", "#19c37d", "#ffc400", "#ff7ad9", "#ffffff"];
+  function launchConfetti() {
+    var box = $("confetti");
+    box.innerHTML = "";
+    for (var i = 0; i < 90; i++) {
+      var bit = document.createElement("div");
+      bit.className = "confetti-bit";
+      bit.style.left = Math.random() * 100 + "%";
+      bit.style.background = confettiColors[(Math.random() * confettiColors.length) | 0];
+      var dur = 2.4 + Math.random() * 2.2;
+      bit.style.animationDuration = dur + "s";
+      bit.style.animationDelay = (Math.random() * 1.2) + "s";
+      bit.style.transform = "translateY(-20px)";
+      if (Math.random() < 0.5) bit.style.borderRadius = "50%";
+      box.appendChild(bit);
+    }
+  }
+
+  // ---------- Screen switching ----------
+  function show(which) {
+    ["start", "setup", "game", "win"].forEach(function (id) {
+      $(id).classList.toggle("hidden", id !== which);
+    });
+  }
+
+  // ---------- Wire up ----------
+  $("goSetup").addEventListener("click", function () {
+    buildSetupRows();
+    show("setup");
+  });
+  $("startGame").addEventListener("click", startGame);
+  $("playAgain").addEventListener("click", function () {
+    clearTimeout(waitTimer);
+    buildSetupRows();
+    show("setup");
+  });
+
+  // prevent context menu / long-press selection on the arena
+  document.addEventListener("contextmenu", function (e) {
+    if (e.target.closest && e.target.closest("#game")) e.preventDefault();
+  });
+
+})();
+</script>
+</body>
+</html>
