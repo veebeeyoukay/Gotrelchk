@@ -257,3 +257,18 @@ input:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: 1
   .gaps h2, .cmp-sub { break-after: avoid; }
   .bar > i { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
+
+/* ── export / import as text (works where downloads are blocked) ───────── */
+.exchange {
+  margin-top: 12px; border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; background: #faf7f4;
+}
+.exchange-title { font-size: .95rem; }
+.exchange .tiny { margin: 6px 0 8px; }
+.exchange-text {
+  width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .78rem; line-height: 1.45; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 8px; background: #fff;
+  color: var(--ink); resize: vertical;
+}
+#cmp-paste { margin: 8px 0; }

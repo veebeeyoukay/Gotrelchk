@@ -251,7 +251,7 @@
         </div>
       </div>`;
     $("#btn-copy").onclick = () => navigator.clipboard?.writeText(code).then(() => toast("Code copied"));
-    $("#btn-dl-key").onclick = () => downloadKeyFile();
+    $("#btn-dl-key").onclick = () => downloadKeyFile($("#code-area"));
     $("#btn-begin").onclick = () => viewAssessment();
   }
 
@@ -289,7 +289,52 @@
   }
 
   /* ── flat-file export / import ────────────────────────────────────────── */
-  function downloadKeyFile() {
+
+  /* A page served from a sandboxed frame (and some mobile browsers) can't start
+   * its own download — an `<a download>` is simply inert there. So every export
+   * is also offered as selectable text, and every import also accepts a paste.
+   * Nothing here is a fallback the user has to discover: both are always shown. */
+  function textExchange(opts) {
+    const box = el(`<div class="exchange">
+      <div class="row">
+        <strong class="exchange-title">${esc(opts.title)}</strong>
+        <span class="spacer"></span>
+        <button class="ghost" type="button" data-act="copy">Copy to clipboard</button>
+        <button class="ghost" type="button" data-act="close">Done</button>
+      </div>
+      <p class="tiny">${opts.blurb}</p>
+      <textarea class="exchange-text" readonly rows="6" spellcheck="false"></textarea>
+    </div>`);
+    const ta = box.querySelector(".exchange-text");
+    ta.value = opts.text;
+    box.querySelector('[data-act="copy"]').onclick = () => {
+      ta.select(); ta.setSelectionRange(0, ta.value.length);
+      const done = () => toast("Copied — paste it wherever you're sending it");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(ta.value).then(done, () => toast("Select the text and copy it manually"));
+      } else { try { document.execCommand("copy"); done(); } catch (e) { toast("Select the text and copy it manually"); } }
+    };
+    box.querySelector('[data-act="close"]').onclick = () => box.remove();
+    return box;
+  }
+
+  /* Try a real file download, and always surface the same payload as text. */
+  function offerJson(host, filename, data, title, blurb) {
+    const json = JSON.stringify(data, null, 2);
+    try {
+      const blob = new Blob([json], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    } catch (e) { /* sandboxed — the text panel below is the whole story */ }
+    const prev = host.querySelector(".exchange");
+    if (prev) prev.remove();
+    host.appendChild(textExchange({ title, blurb, text: json }));
+  }
+
+  function downloadKeyFile(host) {
     if (!current) return;
     const data = {
       kind: "relationship-checkup-profile", version: 1,
@@ -298,15 +343,13 @@
       partnerAnswers: current.partnerAnswers || {},
       exportedAt: new Date().toISOString()
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `checkup-${normId(current.identifier).replace(/[^a-z0-9]+/g, "-")}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    offerJson(host || app, `checkup-${normId(current.identifier).replace(/[^a-z0-9]+/g, "-")}.json`, data,
+      "Your full backup",
+      "This is your whole profile, <strong>including your access code</strong> — it's for restoring yourself on another device, not for sending to your partner. If the file didn't download, copy this text and keep it somewhere safe.");
   }
+
   /* A *share* file is the comparison-safe subset: answers only, no access code,
-   * and none of your predictions about your partner. Handing someone this file
+   * and none of your predictions about your partner. Handing someone this
    * is the consent step for a comparison — it never hands over your login. */
   /* Short non-reversible tag for an identifier. Not a security control — it
    * exists so we can spot "that's your own file" without putting the person's
@@ -327,14 +370,13 @@
       exportedAt: new Date().toISOString()
     };
   }
-  function downloadShareFile() {
+  function downloadShareFile(host) {
     if (!current) return;
-    const blob = new Blob([JSON.stringify(buildShareData(), null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `checkup-share-${normId(current.profile.displayName || current.identifier).replace(/[^a-z0-9]+/g, "-")}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    offerJson(host || app,
+      `checkup-share-${normId(current.profile.displayName || current.identifier).replace(/[^a-z0-9]+/g, "-")}.json`,
+      buildShareData(),
+      "Your answers, ready to send",
+      "Answers and your display name only — <strong>no access code</strong>, and nothing you predicted about them. Send the file, or copy this text into a message. They load it on their Compare screen.");
   }
 
   function importKeyFile(e) {
@@ -601,11 +643,8 @@
     app.appendChild(card);
 
     $("#back").onclick = viewAssessment;
-    $("#exp").onclick = downloadKeyFile;
-    $("#share").onclick = () => {
-      downloadShareFile();
-      toast("Share file saved — answers only, no access code");
-    };
+    $("#exp").onclick = () => downloadKeyFile(card);
+    $("#share").onclick = () => downloadShareFile(card);
     $("#cmp").onclick = () => (compare ? viewCompareReport() : viewCompareSetup());
     window.scrollTo({ top: 0 });
   }
@@ -688,8 +727,11 @@
       <div class="row">
         <button class="primary" id="cmp-pick" type="button">Choose their file…</button>
         <input type="file" id="cmp-file" accept="application/json" hidden />
+        <span class="tiny">or paste what they sent you below</span>
       </div>
-      <p class="tiny">They can produce one from their results screen: <em>Share my answers for comparison</em>. That file carries answers only — no access code.</p>
+      <textarea id="cmp-paste" class="exchange-text" rows="4" spellcheck="false" placeholder="Paste their answers here…"></textarea>
+      <div class="row"><button class="ghost" id="cmp-paste-go" type="button">Load pasted answers</button></div>
+      <p class="tiny">They produce it from their results screen: <em>Share my answers for comparison</em> — as a file or as text to copy. Either way it carries answers only, no access code.</p>
       <p id="cmp-file-err" class="error" hidden></p>
     </div>`);
     card.appendChild(fromFile);
@@ -738,37 +780,48 @@
 
     $("#cmp-pick").onclick = () => $("#cmp-file").click();
     $("#cmp-file").onchange = loadCompareFile;
+    $("#cmp-paste-go").onclick = () => {
+      const raw = $("#cmp-paste").value.trim();
+      if (!raw) return showCompareError("Paste what they sent you into the box first.");
+      acceptComparePayload(raw);
+    };
     $("#cmp-back").onclick = viewResults;
     window.scrollTo({ top: 0 });
   }
 
   /* Accepts either a share file or a full profile export. Read-only: we take
    * the answers and the name and discard everything else, including any code. */
+  function showCompareError(msg) {
+    const err = $("#cmp-file-err");
+    if (err) { err.textContent = msg; err.hidden = false; }
+  }
+
+  /* One validation path for both routes in: a chosen file and a pasted blob. */
+  function acceptComparePayload(raw, source) {
+    let data;
+    try { data = JSON.parse(raw); }
+    catch (x) { return showCompareError("That isn't valid check-up data — copy the whole block, from the first { to the last }."); }
+    const ok = data && (data.kind === "relationship-checkup-share" || data.kind === "relationship-checkup-profile");
+    if (!ok) return showCompareError("That isn't check-up data.");
+    const answers = data.answers || {};
+    if (!Object.keys(answers).length) return showCompareError("There are no answers in that yet.");
+    const sameAsMe = (data.identifier && normId(data.identifier) === normId(current.identifier))
+      || (data.ownerTag && data.ownerTag === ownerTag(current.identifier));
+    if (sameAsMe) return showCompareError("That's your own data — load what your partner sent you.");
+    const label = data.displayName
+      || (data.profile && data.profile.displayName)
+      || data.identifier
+      || current.profile.partnerName
+      || "Your partner";
+    startCompare({ label, answers, source: source || "what they sent you" });
+  }
+
   function loadCompareFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const err = $("#cmp-file-err");
-    const fail = (msg) => { if (err) { err.textContent = msg; err.hidden = false; } };
     const reader = new FileReader();
-    reader.onload = () => {
-      let data;
-      try { data = JSON.parse(reader.result); }
-      catch (x) { return fail("Couldn't read that file — it isn't valid JSON."); }
-      const ok = data && (data.kind === "relationship-checkup-share" || data.kind === "relationship-checkup-profile");
-      if (!ok) return fail("That isn't a check-up file.");
-      const answers = data.answers || {};
-      if (!Object.keys(answers).length) return fail("That file has no answers in it yet.");
-      const sameAsMe = (data.identifier && normId(data.identifier) === normId(current.identifier))
-        || (data.ownerTag && data.ownerTag === ownerTag(current.identifier));
-      if (sameAsMe) return fail("That's your own file — load the one your partner exported.");
-      const label = data.displayName
-        || (data.profile && data.profile.displayName)
-        || data.identifier
-        || current.profile.partnerName
-        || "Your partner";
-      startCompare({ label, answers, source: "a file they sent" });
-    };
-    reader.onerror = () => fail("Couldn't read that file.");
+    reader.onload = () => acceptComparePayload(reader.result, "a file they sent");
+    reader.onerror = () => showCompareError("Couldn't read that file.");
     reader.readAsText(file);
   }
 
