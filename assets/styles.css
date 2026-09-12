@@ -16,6 +16,13 @@
   --maxw: 860px;
 }
 * { box-sizing: border-box; }
+
+/* An author rule that sets `display` beats the UA sheet's [hidden]{display:none}
+ * at equal specificity, so elements toggled via `el.hidden` — the glossary
+ * drawer, the session bar, the answering-as toggle — stayed laid out and went
+ * on swallowing clicks. Make `hidden` mean hidden. */
+[hidden] { display: none !important; }
+
 html, body { margin: 0; padding: 0; }
 body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -195,7 +202,7 @@ input:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: 1
 .bar { height: 22px; background: var(--line); border-radius: 999px; overflow: hidden; margin: 4px 0; }
 .bar > i { display: block; height: 100%; }
 .sec-result { margin: 14px 0; }
-.sec-result .top { display: flex; justify-content: space-between; align-items: baseline; }
+.sec-result .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .sec-result .pct { font-weight: 700; }
 .legend { font-size: .82rem; color: var(--muted); }
 .disclaimer { background: #fff7ed; border: 1px solid #f1d9b5; border-radius: 10px; padding: 12px 14px; }
@@ -205,4 +212,48 @@ input:focus, textarea:focus { outline: 2px solid var(--focus); outline-offset: 1
 @media (max-width: 560px) {
   .code-display { font-size: 1.5rem; }
   .whoami { display: none; }
+  /* keep the session controls inside the viewport rather than pushing the
+   * page into a horizontal scroll */
+  .topbar { flex-wrap: wrap; row-gap: 8px; }
+  .session { flex-wrap: wrap; justify-content: flex-end; }
+  .topbar .ghost { padding: 6px 10px; font-size: .85rem; }
+  .dual-line { grid-template-columns: minmax(56px, 84px) 1fr 42px; }
+}
+
+/* ── compare: two people's own answers ────────────────────────────────── */
+.cmp-source { margin-top: 22px; border-top: 1px solid var(--line); padding-top: 14px; }
+.cmp-source h2 { font-size: 1.05rem; margin: 0 0 4px; }
+.cmp-profile { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0; }
+.cmp-profile > div:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; justify-content: space-between; }
+.cmp-unlock { margin-top: 10px; }
+.cmp-code { width: auto; max-width: 160px; }
+.cmp-err { margin: 8px 0 0; }
+.cmp-coverage { margin-top: 18px; }
+.cmp-group h2 { display: flex; align-items: center; gap: 8px; }
+.cmp-count {
+  font-size: .78rem; font-weight: 700; min-width: 22px; text-align: center;
+  padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted);
+}
+.cmp-concern h2 { color: var(--risk); }
+.cmp-concern .cmp-count { background: #fbeae5; color: var(--risk); }
+.cmp-strong h2 { color: var(--good); }
+.cmp-strong .cmp-count { background: #e6f0e8; color: var(--good); }
+.cmp-diverge h2 { color: var(--warn); }
+.cmp-diverge .cmp-count { background: #fbf0df; color: var(--warn); }
+.cmp-blind h3.cmp-sub { font-size: .98rem; margin: 18px 0 2px; color: var(--accent); }
+
+/* names in the dual bars need more room than "You" / "Them" did */
+.dual-line { grid-template-columns: minmax(64px, 108px) 1fr 46px; }
+.dual-who { overflow-wrap: anywhere; }
+
+/* ── print: for taking a comparison to a counsellor ───────────────────── */
+@media print {
+  :root { --shadow: none; }
+  .topbar, .footnote, .drawer, .scrim, .tooltip, .noprint, #toast { display: none !important; }
+  body { background: #fff; }
+  .app { max-width: none; padding: 0; }
+  .card { border: none; box-shadow: none; padding: 0; }
+  .gap-item, .cmp-profile, .sec-result.dual { break-inside: avoid; }
+  .gaps h2, .cmp-sub { break-after: avoid; }
+  .bar > i { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }

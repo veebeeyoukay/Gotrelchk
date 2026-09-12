@@ -164,7 +164,7 @@
           </div>
           <div id="auth-body"></div>
         </div>
-        <p class="tiny">Multi-person by design: each person signs in with their own identifier + 6-digit code. A future update will let two saved profiles compare results.</p>
+        <p class="tiny">Multi-person by design: each person signs in with their own identifier + 6-digit code. Once you've both finished, either of you can compare the two sets of answers side by side.</p>
       </div>`);
     app.appendChild(wrap);
     $("#tab-new").onclick = () => { setTab("new"); };
@@ -305,6 +305,38 @@
     a.click();
     URL.revokeObjectURL(a.href);
   }
+  /* A *share* file is the comparison-safe subset: answers only, no access code,
+   * and none of your predictions about your partner. Handing someone this file
+   * is the consent step for a comparison — it never hands over your login. */
+  /* Short non-reversible tag for an identifier. Not a security control — it
+   * exists so we can spot "that's your own file" without putting the person's
+   * username or email into a file they hand to someone else. */
+  function ownerTag(identifier) {
+    let h = 5381;
+    const s = normId(identifier);
+    for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return h.toString(16);
+  }
+
+  function buildShareData() {
+    return {
+      kind: "relationship-checkup-share", version: 1,
+      displayName: current.profile.displayName || current.identifier,
+      ownerTag: ownerTag(current.identifier),
+      answers: current.answers,
+      exportedAt: new Date().toISOString()
+    };
+  }
+  function downloadShareFile() {
+    if (!current) return;
+    const blob = new Blob([JSON.stringify(buildShareData(), null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `checkup-share-${normId(current.profile.displayName || current.identifier).replace(/[^a-z0-9]+/g, "-")}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
   function importKeyFile(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -542,13 +574,13 @@
     const partOverall = partN ? Math.round(partSum / partN) : null;
 
     card.appendChild(parallel
-      ? dualResult("Overall lean", selfOverall, partOverall, "", "")
+      ? dualResult("Overall lean", selfOverall, partOverall, "", "", me, partner)
       : el(`<div class="sec-result"><div class="top"><strong>Overall lean</strong><span class="pct">${selfOverall === null ? "—" : selfOverall + "%"}</span></div><div class="bar"><i style="width:${selfOverall || 0}%;background:${barColor(selfOverall)}"></i></div></div>`));
 
     rows.forEach(({ sec, s, p }) => {
       if (parallel) {
         card.appendChild(dualResult(sec.title, s.avg === null ? null : Math.round(s.avg), p.avg === null ? null : Math.round(p.avg),
-          `${s.n}/${sec.items.length}`, `${p.n}/${sec.items.length}`));
+          `${s.n}/${sec.items.length}`, `${p.n}/${sec.items.length}`, me, partner));
       } else {
         const pct = s.avg === null ? null : Math.round(s.avg);
         card.appendChild(el(`<div class="sec-result"><div class="top"><span>${esc(sec.title)} <span class="legend">(${s.n}/${sec.items.length} answered)</span></span><span class="pct">${pct === null ? "—" : pct + "%"}</span></div><div class="bar"><i style="width:${pct || 0}%;background:${barColor(pct)}"></i></div></div>`));
@@ -558,26 +590,28 @@
     // Perception gaps: items answered in BOTH maps, biggest divergence first.
     if (parallel) card.appendChild(renderGaps(me, partner));
 
-    const nav = el(`<div class="row" style="margin-top:18px">
+    const nav = el(`<div class="row noprint" style="margin-top:18px">
       <button class="ghost" id="back" type="button">← Back to questions</button>
       <span class="spacer"></span>
       <button class="ghost" id="exp" type="button">Export my data (flat file)</button>
-      <button class="ghost" id="cmp" type="button">${hasPartner() ? `Compare with ${esc(partner)}'s own answers (coming soon)` : "Compare (coming soon)"}</button>
+      <button class="ghost" id="share" type="button">Share my answers for comparison</button>
+      <button class="primary" id="cmp" type="button">${hasPartner() ? `Compare with ${esc(partner)}'s own answers` : "Compare with a partner's answers"}</button>
     </div>`);
     card.appendChild(nav);
     app.appendChild(card);
 
     $("#back").onclick = viewAssessment;
     $("#exp").onclick = downloadKeyFile;
-    $("#cmp").onclick = () => {
-      const n = Object.keys(loadStore().profiles).length;
-      toast(`Coming soon: invite ${partner || "your partner"} to answer for themselves, then compare. ${n} profile${n === 1 ? "" : "s"} saved here so far.`);
+    $("#share").onclick = () => {
+      downloadShareFile();
+      toast("Share file saved — answers only, no access code");
     };
+    $("#cmp").onclick = () => (compare ? viewCompareReport() : viewCompareSetup());
     window.scrollTo({ top: 0 });
   }
 
-  // Two-bar row for the parallel report.
-  function dualResult(title, selfPct, partPct, selfN, partN) {
+  // Two-bar row, used by both the parallel report and the two-person comparison.
+  function dualResult(title, selfPct, partPct, selfN, partN, selfLabel, partLabel) {
     const row = (cls, pct, who, n) => `
       <div class="dual-line">
         <span class="dual-who">${esc(who)} ${n ? `<span class="legend">(${n})</span>` : ""}</span>
@@ -587,8 +621,8 @@
     const gap = (selfPct !== null && partPct !== null) ? Math.abs(selfPct - partPct) : null;
     return el(`<div class="sec-result dual">
       <div class="top"><strong>${esc(title)}</strong>${gap !== null && gap >= 20 ? `<span class="gap-flag">gap ${gap}%</span>` : ""}</div>
-      ${row("self", selfPct, "You", selfN)}
-      ${row("partner", partPct, "Them", partN)}
+      ${row("self", selfPct, selfLabel || "You", selfN)}
+      ${row("partner", partPct, partLabel || "Them", partN)}
     </div>`);
   }
 
@@ -621,6 +655,299 @@
     });
     return box;
   }
+  /* ═══════════════════════════════════════════════════════════════════════
+   * VIEW: COMPARE — two people's *own* answers, side by side.
+   *
+   * This is the real two-person report, as opposed to the parallel report
+   * above (which compares you against your *prediction* of your partner).
+   * Two ways in, both flat-file / on-device only:
+   *   1. Another profile saved in this browser — gated on their access code,
+   *      so one person can't read another's answers without them unlocking it.
+   *   2. A file they exported and sent you — the act of sending is consent.
+   * Nothing here writes to the other person's record, and loading a partner
+   * NEVER replaces your own signed-in session.
+   * ═══════════════════════════════════════════════════════════════════════*/
+  let compare = null; // { label, answers, source }
+
+  function viewCompareSetup() {
+    setSessionBar(true);
+    app.innerHTML = "";
+    const partner = current.profile.partnerName;
+    const others = Object.values(loadStore().profiles)
+      .filter((p) => normId(p.identifier) !== normId(current.identifier));
+
+    const card = el(`<section class="card">
+      <h1>Compare with ${partner ? esc(partner) + "'s" : "a partner's"} own answers</h1>
+      <div class="disclaimer">This compares your answers with <strong>${partner ? esc(partner) + "'s actual answers" : "your partner's actual answers"}</strong> — what they said themselves, not what you predicted. It only works if they've completed their own check-up. Their answers stay on this device and are never sent anywhere.</div>
+      <div class="context" style="margin-top:14px"><span class="tag">Before you do this</span><div>A comparison is meant to be opened <em>together</em>, or with a counsellor. Reading someone's answers without them knowing tends to cost more than it tells you — and nothing here is a verdict on either of you.</div></div>
+    </section>`);
+
+    const fromFile = el(`<div class="cmp-source">
+      <h2>They sent me a file</h2>
+      <p class="legend">Load the file they exported from their own check-up. It doesn't touch your profile or your login.</p>
+      <div class="row">
+        <button class="primary" id="cmp-pick" type="button">Choose their file…</button>
+        <input type="file" id="cmp-file" accept="application/json" hidden />
+      </div>
+      <p class="tiny">They can produce one from their results screen: <em>Share my answers for comparison</em>. That file carries answers only — no access code.</p>
+      <p id="cmp-file-err" class="error" hidden></p>
+    </div>`);
+    card.appendChild(fromFile);
+
+    const onDevice = el(`<div class="cmp-source">
+      <h2>They use this device</h2>
+    </div>`);
+    if (!others.length) {
+      onDevice.appendChild(el(`<p class="legend">No other profile is saved in this browser. If ${partner ? esc(partner) : "your partner"} does their check-up here, their profile will appear in this list.</p>`));
+    } else {
+      onDevice.appendChild(el(`<p class="legend">Pick their profile, then have <strong>them</strong> enter their own 6-digit code to unlock it. You shouldn't be entering it for them.</p>`));
+      others.forEach((p) => {
+        const nm = p.profile && p.profile.displayName ? p.profile.displayName : p.identifier;
+        const n = Object.keys(p.answers || {}).length;
+        const row = el(`<div class="cmp-profile">
+          <div><strong>${esc(nm)}</strong> <span class="legend">— ${n} of ${totalItems} answered</span></div>
+          <div class="row cmp-unlock" hidden>
+            <input type="text" inputmode="numeric" maxlength="6" placeholder="Their 6-digit code" class="cmp-code" />
+            <button class="primary cmp-go" type="button">Unlock &amp; compare</button>
+          </div>
+          <p class="error cmp-err" hidden></p>
+        </div>`);
+        const btn = el(`<button class="ghost" type="button">Compare with ${esc(nm)}</button>`);
+        btn.onclick = () => { row.querySelector(".cmp-unlock").hidden = false; row.querySelector(".cmp-code").focus(); };
+        row.querySelector("div").appendChild(btn);
+        row.querySelector(".cmp-go").onclick = () => {
+          const err = row.querySelector(".cmp-err");
+          if (row.querySelector(".cmp-code").value.trim() !== p.code) {
+            err.textContent = "That code doesn't match this profile."; err.hidden = false; return;
+          }
+          if (!Object.keys(p.answers || {}).length) {
+            err.textContent = `${nm} hasn't answered anything yet — there's nothing to compare.`; err.hidden = false; return;
+          }
+          startCompare({ label: nm, answers: p.answers, source: "this device" });
+        };
+        onDevice.appendChild(row);
+      });
+    }
+    card.appendChild(onDevice);
+
+    const nav = el(`<div class="row" style="margin-top:18px">
+      <button class="ghost" id="cmp-back" type="button">← Back to my results</button>
+    </div>`);
+    card.appendChild(nav);
+    app.appendChild(card);
+
+    $("#cmp-pick").onclick = () => $("#cmp-file").click();
+    $("#cmp-file").onchange = loadCompareFile;
+    $("#cmp-back").onclick = viewResults;
+    window.scrollTo({ top: 0 });
+  }
+
+  /* Accepts either a share file or a full profile export. Read-only: we take
+   * the answers and the name and discard everything else, including any code. */
+  function loadCompareFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const err = $("#cmp-file-err");
+    const fail = (msg) => { if (err) { err.textContent = msg; err.hidden = false; } };
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try { data = JSON.parse(reader.result); }
+      catch (x) { return fail("Couldn't read that file — it isn't valid JSON."); }
+      const ok = data && (data.kind === "relationship-checkup-share" || data.kind === "relationship-checkup-profile");
+      if (!ok) return fail("That isn't a check-up file.");
+      const answers = data.answers || {};
+      if (!Object.keys(answers).length) return fail("That file has no answers in it yet.");
+      const sameAsMe = (data.identifier && normId(data.identifier) === normId(current.identifier))
+        || (data.ownerTag && data.ownerTag === ownerTag(current.identifier));
+      if (sameAsMe) return fail("That's your own file — load the one your partner exported.");
+      const label = data.displayName
+        || (data.profile && data.profile.displayName)
+        || data.identifier
+        || current.profile.partnerName
+        || "Your partner";
+      startCompare({ label, answers, source: "a file they sent" });
+    };
+    reader.onerror = () => fail("Couldn't read that file.");
+    reader.readAsText(file);
+  }
+
+  function startCompare(payload) {
+    const overlap = allItems.filter((it) =>
+      current.answers[it.id] !== undefined && payload.answers[it.id] !== undefined).length;
+    if (!overlap) {
+      toast("You haven't both answered any of the same questions yet.");
+      return;
+    }
+    compare = payload;
+    viewCompareReport();
+  }
+
+  /* 0..100 strength → band. scale5: ≥67 is a 4 or 5, <40 is a 1 or 2. */
+  function band(pct) { return pct >= 67 ? "strong" : pct < 40 ? "concern" : "middling"; }
+
+  function viewCompareReport() {
+    if (!compare) return viewCompareSetup();
+    setSessionBar(true);
+    app.innerHTML = "";
+    const me = current.profile.displayName || "You";
+    const them = compare.label;
+    const theirs = compare.answers;
+
+    const card = el(`<section class="card"></section>`);
+    card.appendChild(el(`<h1>${esc(me)} &amp; ${esc(them)}</h1>`));
+    card.appendChild(el(`<div class="disclaimer">Both of your <strong>own</strong> answers, side by side — loaded from ${esc(compare.source)}. Read it together if you can. Where you differ isn't a scoreline; it's usually just the place where one of you has information the other doesn't.</div>`));
+    card.appendChild(el(`<div class="legend keylegend"><span><i class="swatch self"></i> ${esc(me)}</span> <span><i class="swatch partner"></i> ${esc(them)}</span></div>`));
+
+    // ── section-by-section, both real ──────────────────────────────────────
+    let aSum = 0, aN = 0, bSum = 0, bN = 0;
+    const rows = [];
+    SECTIONS.forEach((sec) => {
+      const a = sectionAvg(sec, current.answers);
+      const b = sectionAvg(sec, theirs);
+      if (a.n) { aSum += a.avg * a.n; aN += a.n; }
+      if (b.n) { bSum += b.avg * b.n; bN += b.n; }
+      rows.push({ sec, a, b });
+    });
+    card.appendChild(dualResult("Overall lean", aN ? Math.round(aSum / aN) : null, bN ? Math.round(bSum / bN) : null, "", "", me, them));
+    rows.filter(({ a, b }) => a.n || b.n).forEach(({ sec, a, b }) => card.appendChild(dualResult(
+      sec.title,
+      a.avg === null ? null : Math.round(a.avg),
+      b.avg === null ? null : Math.round(b.avg),
+      `${a.n}/${sec.items.length}`, `${b.n}/${sec.items.length}`, me, them)));
+
+    // Rather than a run of empty bars, name the untouched sections once.
+    const untouched = rows.filter(({ a, b }) => !a.n && !b.n).map(({ sec }) => sec.title);
+    if (untouched.length) card.appendChild(el(
+      `<p class="legend">Not started by either of you yet: ${esc(untouched.join(", "))}.</p>`));
+
+    // ── item-level classification over the overlap ─────────────────────────
+    const shared = [];
+    allItems.forEach((it) => {
+      const av = current.answers[it.id], bv = theirs[it.id];
+      const as = itemStrength(it, av), bs = itemStrength(it, bv);
+      if (as === null || bs === null) return;
+      shared.push({ it, av, bv, as, bs, diff: Math.abs(as - bs) });
+    });
+
+    const strengths = shared.filter((r) => band(r.as) === "strong" && band(r.bs) === "strong");
+    const concerns = shared.filter((r) => band(r.as) === "concern" && band(r.bs) === "concern");
+    const differing = shared.filter((r) => r.diff >= 50).sort((x, y) => y.diff - x.diff);
+
+    card.appendChild(el(`<p class="legend cmp-coverage">Based on the <strong>${shared.length}</strong> question${shared.length === 1 ? "" : "s"} you've both answered.</p>`));
+
+    card.appendChild(cmpGroup(
+      "You both already agree this is hard",
+      concerns.length
+        ? `Neither of you is defending these. That agreement is worth something — it's the shortest route to a change you'd both actually back.`
+        : `Nothing you've both answered lands in the difficult range for both of you.`,
+      concerns, me, them, "concern"));
+
+    card.appendChild(cmpGroup(
+      "You both see this as working",
+      strengths.length
+        ? `Shared ground. When a harder conversation stalls, this is what you're arguing <em>from</em>, not against.`
+        : `Nothing you've both answered lands in the strong range for both of you yet.`,
+      strengths, me, them, "strong"));
+
+    card.appendChild(cmpGroup(
+      "You're living this differently",
+      differing.length
+        ? `The same question, answered from two ends. Neither of you is the one who's wrong here — you're each reporting your own experience accurately. Start with the one that surprises you most.`
+        : `On the questions you've both answered, you didn't land at opposite ends of anything.`,
+      differing.slice(0, 8), me, them, "diverge"));
+
+    // ── blind spots: your prediction vs what they actually said ────────────
+    card.appendChild(renderBlindSpots(me, them, theirs));
+
+    const nav = el(`<div class="row noprint" style="margin-top:18px">
+      <button class="ghost" id="c-back" type="button">← My results</button>
+      <button class="ghost" id="c-other" type="button">Compare with someone else</button>
+      <span class="spacer"></span>
+      <button class="ghost" id="c-print" type="button">Print / save as PDF</button>
+      <button class="ghost" id="c-close" type="button">Close comparison</button>
+    </div>`);
+    card.appendChild(nav);
+    app.appendChild(card);
+
+    $("#c-back").onclick = viewResults;
+    $("#c-other").onclick = () => { compare = null; viewCompareSetup(); };
+    $("#c-print").onclick = () => window.print();
+    $("#c-close").onclick = () => { compare = null; toast("Comparison closed — their answers aren't stored in your profile"); viewResults(); };
+    window.scrollTo({ top: 0 });
+  }
+
+  /* One labelled group of items (shared concerns / strengths / divergences). */
+  function cmpGroup(title, blurb, list, me, them, kind) {
+    const box = el(`<div class="gaps cmp-group cmp-${esc(kind)}"><h2>${esc(title)} <span class="cmp-count">${list.length}</span></h2></div>`);
+    box.appendChild(el(`<p class="legend">${blurb}</p>`));
+    list.forEach((r) => {
+      box.appendChild(el(`<div class="gap-item">
+        <div class="gap-q">${esc(r.it.text)}</div>
+        <div class="gap-rows">
+          <div><span class="dual-who">${esc(me)}:</span> ${esc(answerLabel(r.it, r.av))}</div>
+          <div><span class="dual-who">${esc(them)}:</span> ${esc(answerLabel(r.it, r.bv))}</div>
+        </div>
+      </div>`));
+    });
+    return box;
+  }
+
+  /* Where you predicted your partner and they answered differently themselves.
+   * The half that matters is where you expected better than they reported. */
+  function renderBlindSpots(me, them, theirs) {
+    const box = el(`<div class="gaps cmp-blind"><h2>How well you read ${esc(them)}</h2></div>`);
+    const preds = current.partnerAnswers || {};
+    const pairs = [];
+    allItems.forEach((it) => {
+      const pv = preds[it.id], bv = theirs[it.id];
+      const ps = itemStrength(it, pv), bs = itemStrength(it, bv);
+      if (ps === null || bs === null) return;
+      pairs.push({ it, pv, bv, ps, bs, diff: ps - bs });
+    });
+
+    if (!pairs.length) {
+      box.appendChild(el(`<p class="legend">You haven't filled in the <em>“How would ${esc(them)} answer?”</em> pass yet — or it doesn't overlap with what they've answered. Do that pass and this section will show you where your reading of them was off. It's often the most useful part of the whole check-up.</p>`));
+      return box;
+    }
+
+    const withinOne = pairs.filter((p) => Math.abs(p.diff) <= 25).length;
+    const acc = Math.round((withinOne / pairs.length) * 100);
+    box.appendChild(el(`<div class="sec-result"><div class="top"><strong>You read ${esc(them)} within one step on ${withinOne} of ${pairs.length}</strong><span class="pct">${acc}%</span></div><div class="bar"><i style="width:${acc}%;background:${barColor(acc)}"></i></div></div>`));
+
+    const harsher = pairs.filter((p) => p.diff >= 50).sort((x, y) => y.diff - x.diff);
+    const softer = pairs.filter((p) => p.diff <= -50).sort((x, y) => x.diff - y.diff);
+
+    box.appendChild(el(`<p class="legend">This compares what you <em>predicted</em> ${esc(them)} would say against what they <em>actually</em> said. A low score isn't a failing — it's a map of where to ask instead of assume.</p>`));
+
+    if (harsher.length) {
+      box.appendChild(el(`<h3 class="cmp-sub">Harder for ${esc(them)} than you thought</h3>`));
+      box.appendChild(el(`<p class="legend">You expected a better answer than they gave. These are the ones to ask about first.</p>`));
+      harsher.slice(0, 6).forEach((p) => box.appendChild(el(`<div class="gap-item">
+        <div class="gap-q">${esc(p.it.text)}</div>
+        <div class="gap-rows">
+          <div><span class="dual-who">You predicted:</span> ${esc(answerLabel(p.it, p.pv))}</div>
+          <div><span class="dual-who">${esc(them)} said:</span> ${esc(answerLabel(p.it, p.bv))}</div>
+        </div>
+      </div>`)));
+    }
+    if (softer.length) {
+      box.appendChild(el(`<h3 class="cmp-sub">Better for ${esc(them)} than you thought</h3>`));
+      box.appendChild(el(`<p class="legend">You braced for worse than they reported. Worth noticing — you may be carrying weight they aren't.</p>`));
+      softer.slice(0, 6).forEach((p) => box.appendChild(el(`<div class="gap-item">
+        <div class="gap-q">${esc(p.it.text)}</div>
+        <div class="gap-rows">
+          <div><span class="dual-who">You predicted:</span> ${esc(answerLabel(p.it, p.pv))}</div>
+          <div><span class="dual-who">${esc(them)} said:</span> ${esc(answerLabel(p.it, p.bv))}</div>
+        </div>
+      </div>`)));
+    }
+    if (!harsher.length && !softer.length) {
+      box.appendChild(el(`<p class="legend">No large misses — your predictions tracked ${esc(them)}'s own answers closely across the overlap.</p>`));
+    }
+    return box;
+  }
+
   function barColor(pct) {
     if (pct === null) return "var(--line)";
     if (pct >= 67) return "var(--good)";
@@ -639,6 +966,7 @@
   $("#btn-signout").onclick = () => {
     persist();
     current = null;
+    compare = null;
     localStorage.removeItem(SESSION_KEY);
     viewAuth();
   };

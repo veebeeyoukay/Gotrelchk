@@ -33,8 +33,40 @@ The brief was a *multi-person login using flat files only*:
    so a profile can move between devices without any database.
 
 Each person gets their own profile, so the app is **multi-person by design**.
-A **Compare** option is stubbed in the results view for a future build (it will
-let two saved profiles compare answers side by side).
+
+## Comparing two people
+
+Two people each complete their own check-up, then either of them opens the
+comparison from the results screen. Still no server — the two sets of answers
+meet on one device, or not at all.
+
+**Two ways in:**
+
+- **They sent me a file.** They export a *share file* from their results
+  (`Share my answers for comparison`) and send it however they like. A share
+  file carries answers, a display name, and a short non-reversible owner tag —
+  **not** the access code, and not their predictions about you. Loading it is
+  read-only: it never touches your profile, your login, or your saved answers.
+- **They use this device.** If both profiles live in the same browser, pick
+  theirs from the list — then *they* enter *their own* 6-digit code to unlock
+  it. One person can't read the other's answers without them present.
+
+**What the comparison shows**, over the questions you've both answered:
+
+| Section | What it's for |
+| --- | --- |
+| Section bars, both real | Where each of you lands, side by side |
+| *You both already agree this is hard* | Both in the difficult range — shared ground, and the shortest route to a change you'd both back |
+| *You both see this as working* | Both in the strong range — what a harder conversation argues *from* |
+| *You're living this differently* | The same question, answered two steps or more apart |
+| *How well you read [them]* | Your **predictions** against their **actual** answers, split into *harder than you thought* and *better than you thought*, with a hit rate |
+
+That last one is the point of the `How would they answer?` pass — it's the only
+part that tells you where you're guessing instead of asking.
+
+`Print / save as PDF` produces a clean copy (no nav, no top bar) to take to a
+counsellor. `Close comparison` drops their answers from the session; they are
+never written into your profile.
 
 ## The two things the template proves
 
@@ -56,7 +88,8 @@ let two saved profiles compare answers side by side).
 index.html          App shell (login → assessment → results)
 assets/data.js      All content: sections, items, per-option meanings,
                     guidance, glossary, and per-participant context notes
-assets/app.js       Login, tooltips, scoring, save/load, flat-file export/import
+assets/app.js       Login, tooltips, scoring, save/load, flat-file export/import,
+                    two-person comparison
 assets/styles.css   Styling (no frameworks)
 ```
 
@@ -96,3 +129,18 @@ reconstructed closely from the source assessment chat that seeded this project.
 There is no server and no analytics. Everything lives in the browser. Because
 there's no backend, a lost 6-digit code can't be recovered — keep the key file
 or the emailed code.
+
+Comparison is built so that sharing answers never means sharing access:
+
+- The **share file** contains answers and a display name. It does **not**
+  contain the access code, the situation text, the profile flags, or your
+  predictions about your partner.
+- Unlocking a profile stored on the same device requires **that person's** own
+  code.
+- A loaded comparison is held in memory only. Signing out or closing the
+  comparison discards it; nothing about the other person is written into your
+  saved profile.
+
+None of this is a substitute for consent. If reading someone's answers without
+them present would be a problem in your relationship, it is a problem here too —
+the app says so on the way in.
