@@ -95,10 +95,13 @@ assets/styles.css   Styling (no frameworks)
 
 ## Content / coverage
 
-`data.js` is organised as `SECTIONS → items`. The **Trust** section is the
-fully-built reference template (all fields populated); copy its shape to build
-any other section. Representative sections cover the breadth of the Gottman
-Relationship Checkup's five categories:
+`data.js` is organised as `SECTIONS → items` — **12 sections, 76 items**. Every
+item carries the full guidance set (*How to decide*, *Why this matters*,
+*Distinguish carefully*, *Don't soften it*, *Gut check*) plus per-option
+meanings; 19 carry a `contextNote(profile)` that adapts to the logged-in
+person. The **Trust** section remains the reference template — copy its shape
+to add anything new. Sections cover the breadth of the Gottman Relationship
+Checkup's five categories:
 
 - **Friendship & Intimacy** — Love Maps, Fondness & Admiration, Turning Toward,
   Emotional Connection & Disengagement, Romance & Passion
@@ -110,8 +113,23 @@ Relationship Checkup's five categories:
   (finances, housework, parenting, fun)
 
 The wording is *representative*, not the verbatim licensed Gottman instrument.
-Several high-signal items (Trust, Commitment, Emotional Connection, Sex) are
-reconstructed closely from the source assessment chat that seeded this project.
+The item framing, diagnostic distinctions and interpretation guidance are
+reconstructed from the source assessment chat that seeded this project.
+
+### Not covered
+
+The source material's **Section 5 (Individual Areas of Concern)** is
+deliberately **not** implemented: substance use, suicidal ideation, physical
+violence, coercive control, sexual coercion, property destruction and
+depression screening. Those items need a different response model from the rest
+of the check-up — they have to surface crisis resources, they must never be
+shareable through the comparison feature, and several of them indicate that
+standard couples work is contraindicated rather than indicated. Adding them is
+a separate decision, not a content gap.
+
+One item that borders on that territory *is* included — `ev_money_control`, on
+financial control — because it belongs to the standard finances cluster. Its
+guidance names the pattern as coercive control and carries hotline details.
 
 ## Editing content
 
